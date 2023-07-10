@@ -1,0 +1,23 @@
+name: aba
+dependencies:
+  - python
+  - pip
+  - numpy
+  - pandas
+  - statsmodels
+  - matplotlib
+  - seaborn
+  - intervaltree
+  - bokeh
+  - jupyter_bokeh
+  - holoviews
+  - datashader
+  - pyarrow
+  - pytables
+  - ipykernel
+  - shapely
+  - pip:
+    - tdt
+    - opencv-python
+
+
