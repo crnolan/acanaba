@@ -1,0 +1,5 @@
+subject,session,task,leftleverrew,rightleverrew
+mickey,prerev,RR20,grain,purified
+mickey,rev.01,rev,purified,grain
+minnie,prerev,RR20,purified,grain
+minnie,rev.01,rev,grain,purified
