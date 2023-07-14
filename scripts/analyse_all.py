@@ -8,7 +8,7 @@
 # Let's load our tracked data and calculate some basic metrics for the pre-reversal and first reversal session.
 #
 # First we need to import the `pandas` module which allows us to manipulate tabular data. The module provides two basic data structures, DataFrames (table-like) and Series (row-like).
-
+# Remy / Danger / Pinky / The Brain
 # %%
 import pandas as pd
 idx = pd.IndexSlice
@@ -160,3 +160,47 @@ events = recordings.med_path.groupby(['subject', 'session', 'task', 'acq']).appl
 events
 
 # %%
+from shapely.geometry import Polygon
+from shapely.vectorized import contains
+
+lp_df = pd.read_csv('region_coordinates.csv', index_col=['subject'])
+
+# %%
+def in_region_group(group):
+    regions = lp_df.loc[group.index[0][0]]
+    session = group.index[0][1]
+    left_poly = Polygon([(regions.ll_tl_x, regions.ll_tl_y),
+                         (regions.ll_br_x, regions.ll_tl_y),
+                         (regions.ll_br_x, regions.ll_br_y),
+                         (regions.ll_tl_x, regions.ll_br_y)])
+    right_poly = Polygon([(regions.rl_tl_x, regions.rl_tl_y),
+                          (regions.rl_br_x, regions.rl_tl_y),
+                          (regions.rl_br_x, regions.rl_br_y),
+                          (regions.rl_tl_x, regions.rl_br_y)])
+    if session == 'prerev':
+        if regions.ll_pre == 'PUR':
+            pur_poly = left_poly
+            grn_poly = right_poly
+        else:
+            pur_poly = right_poly
+            grn_poly = left_poly
+    else:
+        if regions.ll_post == 'PUR':
+            pur_poly = left_poly
+            grn_poly = right_poly
+        else:
+            pur_poly = right_poly
+            grn_poly = left_poly
+    zones = {
+        'PUR': pur_poly,
+        'GRN': grn_poly
+    }
+    df = pd.DataFrame({
+        zone: contains(poly, group.loc[:, 'x'].to_numpy(), group.loc[:, 'y'].to_numpy()) for zone, poly in zones.items()
+    })
+    return df.set_index(group.index)
+
+region_occ = head_centre_df.groupby(['subject', 'session'], group_keys=False).apply(in_region_group)
+region_occ.columns.name = 'region'
+region_occ
+
