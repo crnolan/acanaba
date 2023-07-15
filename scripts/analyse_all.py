@@ -204,3 +204,42 @@ region_occ = head_centre_df.groupby(['subject', 'session'], group_keys=False).ap
 region_occ.columns.name = 'region'
 region_occ
 
+
+# %%
+region_occ_filtered = region_occ.loc[region_occ.any(axis=1), :]
+region_occ_filtered = region_occ_filtered.stack()
+region_occ_filtered = region_occ_filtered[region_occ_filtered].to_frame().reset_index().set_index(['subject', 'session', 'task', 'acq', 'frame_id']).drop(0, axis=1)
+region_occ_filtered
+
+# %%
+region_occ_filtered['group'] = region_occ_filtered.groupby(['subject', 'session', 'task', 'acq'], as_index=False).transform(lambda x: (x != x.shift(1)).cumsum())
+region_occ_filtered
+
+# %%
+bodyparts_in_region_groups = region_occ_filtered.reset_index().groupby(['subject', 'session', 'task', 'acq', 'group', 'region']).agg(lambda x: x.iloc[-1] - x.iloc[0])
+bodyparts_in_region_occ = bodyparts_in_region_groups.groupby(['subject', 'session', 'task', 'acq', 'region']).sum()
+bodyparts_in_region_occ
+
+# %%
+bodyparts_in_region_occ['time'] = bodyparts_in_region_occ['frame_id'] / 30
+
+
+# %%
+import seaborn as sns
+p1 = sns.pointplot(data=bodyparts_in_region_occ.time.loc[idx[:, 'prerev', :, :, :, :]].reset_index(), x='region', y='time', units='subject', hue='subject', scale=0.4)
+p1.legend().remove()
+p2 = sns.pointplot(data=bodyparts_in_region_occ.time.loc[idx[:, 'rev.01', :, :, :, :]].reset_index(), x='region', y='time', units='subject', hue='subject', scale=0.4)
+p2.legend().remove()
+
+
+# %%
+bodyparts_in_region_occ
+
+# %%
+def dd(df):
+    xy = df.diff()
+    return xy.pow(2).sum(axis=1).pow(0.5)
+hc_dd = head_centre_df.groupby(['subject', 'session', 'task', 'acq'], group_keys=False).apply(dd)
+hc_dist_travelled= hc_dd.groupby(['subject', 'session', 'task', 'acq']).sum()
+
+# %%
