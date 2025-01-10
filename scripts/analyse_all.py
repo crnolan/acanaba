@@ -14,6 +14,7 @@ import pandas as pd
 idx = pd.IndexSlice
 import numpy as np
 import spatial
+from behapy.events import find_events
 
 import holoviews as hv
 from holoviews import opts
@@ -29,11 +30,14 @@ panel.extension(comms='vscode')
 from pathlib import Path
 from collections import namedtuple
 import re
+# data_path = Path('../data/operant2023')
+data_path = Path(r'C:\Users\cnolan\UNSW\ACAN - ABA - ABA\ACAN2023\operant\organised')
 Recording = namedtuple(
     "Recording", ["subject", "session", "task", "acq", "med_path", "dlc_path"])
 pattern = (f'sub-*/ses-*/sub-*_ses-*_task-*_acq-*_events.csv')
 regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_events.csv")
-data_files = list(Path('../data/operant2023').glob(str(pattern)))
+# data_files = list(Path('../data/operant2023').glob(str(pattern)))
+data_files = list(data_path.glob(str(pattern)))
 extracted_data = []
 for file_path in data_files:
     match = re.search(regex_pattern, str(file_path.name))
@@ -90,8 +94,12 @@ def load_sidecar(filename: str) -> pd.Series:
     return pd.Series(info)
 
 # %%
-sidecar_fns = Path('../data/operant2023').glob('*/*/*.json')
+sidecar_fns = data_path.glob('*/*/*.json')
 info_df = pd.DataFrame([load_sidecar(fn) for fn in sidecar_fns]).set_index(['sub', 'ses', 'acq'])
+# Check the frame rate is consistent
+info_df['fps'] = info_df.eval('(laston - firston) / (lastmed - firstmed)')
+info_df['fps30_lastframe'] = info_df.eval('30 * (lastmed - firstmed) + firston')
+info_df['frame_diff'] = info_df.eval('fps30_lastframe - laston')
 info_df
 
 # %% [markdown]
@@ -100,10 +108,12 @@ info_df
 # %%
 def get_acq_session(info):
     df = track_df.loc[idx[info.sub, info.ses, :, info.acq, info.firston:info.laston], :]
+    df
     return df
 
 # %%
 acq_df = pd.concat([get_acq_session(info) for info in info_df.reset_index().itertuples()])
+# TODO: Convert frame number to MedPC time
 acq_df
 
 # %% [markdown]
@@ -115,6 +125,9 @@ head_centre_df = acq_df.stack().loc[idx[:, :, :, :, :, ['x', 'y']], ['leftEar', 
 head_centre_df = head_centre_df.loc[head_centre_mask, :]
 head_centre_df['t'] = head_centre_df.index.get_level_values('frame_id') / 30
 head_centre_df
+
+# %%
+info_df
 
 # %%
 paths = {(sub, ses, acq): hv.Path(head_centre_df.loc[idx[sub, ses, :, acq, :], :])
@@ -161,6 +174,51 @@ events = events.reset_index().drop('event_id', axis=1).rename({'value': 'event_i
 events['duration'] = 0.01
 events = events[['duration', 'event_id']]
 events
+
+
+# %%
+def _concat_events(events,
+                   new_event,
+                   new_event_id):
+    new_events = pd.concat([new_event],
+                           keys=[new_event_id],
+                           names=['event_id'])
+    new_events = new_events.reset_index('event_id').loc[:, ['duration', 'event_id']]
+    return pd.concat([events, new_events]).sort_index()
+
+
+def _find_and_concat_events(events,
+                            new_event_id,
+                            reference,
+                            source,
+                            reject=[],
+                            direction='forward',
+                            allow_exact_matches=True):
+    sub_events = find_events(events, reference, source, reject, direction,
+                             allow_exact_matches)
+    return _concat_events(events, sub_events, new_event_id)
+
+
+def _get_nonevent(events, sub_events):
+    nonevent = events.loc[:, ['duration']].merge(
+        sub_events.loc[:, []],
+        how='left', left_index=True, right_index=True, indicator=True)
+    return nonevent.loc[nonevent._merge == 'left_only', ['duration']]
+
+
+def _get_nonevent_and_concat(events, new_event_id, match_event, sub_events):
+    if isinstance(sub_events, str):
+        sub_events = [sub_events]
+    nonevent = _get_nonevent(events.loc[events.event_id == match_event, :],
+                             events.loc[events.event_id.isin(sub_events), :])
+    return _concat_events(events, nonevent, new_event_id)
+
+
+# %% [markdown]
+#
+# Firstly get activity around all rewarded mag events
+events = _find_and_concat_events(events, 'REWmag', 'Mag', 'Rew', direction='forward')
+
 
 # %%
 from shapely.geometry import Polygon
