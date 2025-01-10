@@ -157,6 +157,9 @@ def load_med_session(session: pd.Series) -> pd.DataFrame:
     return df.loc[:, ['onset', 'value']]
 
 events = recordings.med_path.groupby(['subject', 'session', 'task', 'acq']).apply(load_med_session)
+events = events.reset_index().drop('event_id', axis=1).rename({'value': 'event_id'}, axis=1).set_index(['subject', 'session', 'task', 'acq', 'onset'])
+events['duration'] = 0.01
+events = events[['duration', 'event_id']]
 events
 
 # %%
@@ -226,8 +229,15 @@ bodyparts_in_region_occ['time'] = bodyparts_in_region_occ['frame_id'] / 30
 
 # %%
 import seaborn as sns
+sns.catplot(data=bodyparts_in_region_occ.reset_index(),
+            x='region', y='time', hue='acq', row='session',
+            kind='point', scale=0.4)
+
+# %%
 p1 = sns.pointplot(data=bodyparts_in_region_occ.time.loc[idx[:, 'prerev', :, :, :, :]].reset_index(), x='region', y='time', units='subject', hue='subject', scale=0.4)
 p1.legend().remove()
+
+# %%
 p2 = sns.pointplot(data=bodyparts_in_region_occ.time.loc[idx[:, 'rev.01', :, :, :, :]].reset_index(), x='region', y='time', units='subject', hue='subject', scale=0.4)
 p2.legend().remove()
 
@@ -241,5 +251,10 @@ def dd(df):
     return xy.pow(2).sum(axis=1).pow(0.5)
 hc_dd = head_centre_df.groupby(['subject', 'session', 'task', 'acq'], group_keys=False).apply(dd)
 hc_dist_travelled= hc_dd.groupby(['subject', 'session', 'task', 'acq']).sum()
+
+# %%
+hc_dist_travelled.name = 'distance_travelled'
+p1 = sns.pointplot(data=hc_dist_travelled.reset_index(), x='session', y='distance_travelled', units='subject', hue='subject', scale=0.4)
+p1.legend().remove()
 
 # %%
