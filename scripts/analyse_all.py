@@ -31,6 +31,7 @@ from pathlib import Path
 from collections import namedtuple
 import re
 # data_path = Path('../data/operant2023')
+dlc_threshold = 0.8
 data_path = Path(r'C:\Users\cnolan\UNSW\ACAN - ABA - ABA\ACAN2023\operant\organised')
 Recording = namedtuple(
     "Recording", ["subject", "session", "task", "acq", "med_path", "dlc_path"])
@@ -107,24 +108,61 @@ info_df
 
 # %%
 def get_acq_session(info):
-    df = track_df.loc[idx[info.sub, info.ses, :, info.acq, info.firston:info.laston], :]
-    df
-    return df
+    df = track_df.loc[idx[info.sub, info.ses, :, info.acq, info.firston:info.laston], :].copy()
+    _points = ['leftEar', 'rightEar']
+    _df = pd.DataFrame({
+        'x': df.loc[:, idx[_points, 'x']].mean(axis=1),
+        'y': df.loc[:, idx[_points, 'y']].mean(axis=1),
+        'likelihood': df.loc[:, idx[_points, 'likelihood']].min(axis=1)
+    })
+    _df.columns = pd.MultiIndex.from_product([['head'], _df.columns])
+    _df.columns.names = ['bodyparts', 'coords']
+    df = pd.concat([df, _df], axis=1)
+    frame_ids = df.index.get_level_values('frame_id')
+    # df['time'] = (frame_ids - frame_ids.min()) / info.fps + 0.7
+    df['time'] = (frame_ids - frame_ids.min()) / 30 + 0.7
+    return df.set_index('time', append=True)
 
 # %%
 acq_df = pd.concat([get_acq_session(info) for info in info_df.reset_index().itertuples()])
-# TODO: Convert frame number to MedPC time
 acq_df
+
+# %%
+def calc_speed(df, group_columns):
+    _df = df.copy()
+    _xydiff = _df.loc[:, ['x', 'y']].groupby(group_columns).diff()
+    _df['speed'] = _xydiff.pow(2).sum(skipna=False, axis=1).pow(0.5)
+    # Filter by likelihood; drop all rows and row-1s (because speed is
+    # calculated between rows)
+    _df.loc[_df.loc[:, 'likelihood'] < dlc_threshold, ['speed']] = pd.NA
+    _ls = _df.loc[:, 'likelihood'].groupby(group_columns).shift(1)
+    _df.loc[_ls < dlc_threshold, ['speed']] = pd.NA
+
+    # Now get a rolling mean of speed
+    # _df['mean_speed'] = _df['speed'].groupby(group_columns).apply(
+    #     lambda x: print(x.rolling(15, center=True).mean().head(20)))
+    _df['mean_speed'] = _df['speed'].groupby(group_columns, group_keys=False).apply(
+        lambda x: x.rolling(15, center=True).mean())
+    return _df
+
+
+acq_df = calc_speed(acq_df.stack('bodyparts'), ['subject', 'session', 'task', 'acq', 'bodyparts'])
+acq_df = acq_df.unstack('bodyparts').reorder_levels([1, 0], axis=1).sort_index(axis=1)
 
 # %% [markdown]
 # What about the centre point of the head? We need the mean point between the two ears, filtered for only those points where the likelihoods of both points are above a threshold.
 
 # %%
-head_centre_mask = (acq_df.stack().loc[idx[:, :, :, :, :, ['likelihood']], idx['leftEar', 'rightEar']] > 0.95).all(axis=1).to_numpy()
-head_centre_df = acq_df.stack().loc[idx[:, :, :, :, :, ['x', 'y']], ['leftEar', 'rightEar']].mean(axis=1).unstack()
-head_centre_df = head_centre_df.loc[head_centre_mask, :]
-head_centre_df['t'] = head_centre_df.index.get_level_values('frame_id') / 30
-head_centre_df
+# head_centre_mask = (acq_df.stack().loc[idx[:, :, :, :, :, :, ['likelihood']], idx['leftEar', 'rightEar']] > 0.95).all(axis=1).to_numpy()
+# head_centre_df = acq_df.stack().loc[idx[:, :, :, :, :, :, ['x', 'y']], ['leftEar', 'rightEar']].mean(axis=1).unstack()
+# head_centre_df = head_centre_df.loc[head_centre_mask, :]
+# # head_centre_df['t'] = head_centre_df.index.get_level_values('frame_id') / 30
+# head_centre_df
+head_centre_df = acq_df.loc[acq_df.loc[:, idx['head', 'likelihood']] > dlc_threshold, idx['head', ['x', 'y']]]
+head_centre_df = head_centre_df.droplevel(0, axis=1)
+head_centre_masked_df = acq_df.loc[: , ('head')].copy()
+head_centre_masked_df['mask'] = head_centre_masked_df.loc[:, idx['likelihood']] > dlc_threshold
+head_centre_masked_df = head_centre_masked_df.drop('likelihood', axis=1)
 
 # %%
 info_df
@@ -149,7 +187,7 @@ def get_occupancy(df):
                                 range=path_range)
     return hv.Image(occ.hist.T).opts(cmap='viridis', frame_height=200,
                                      data_aspect=(bins[1]/bins[0]))
-occ = {(sub, ses, acq): get_occupancy(head_centre_df.loc[idx[sub, ses, :, acq, :], ['t', 'x', 'y']])
+occ = {(sub, ses, acq): get_occupancy(head_centre_df.reset_index(['time']).loc[idx[sub, ses, :, acq, :], ['time', 'x', 'y']])
        for i, sub, ses, acq in info_df.reset_index().loc[:, ['sub', 'ses', 'acq']].itertuples()}
 hv.HoloMap(occ, kdims=['sub', 'ses', 'acq']).layout(['acq', 'ses']).cols(2)
 
@@ -217,8 +255,61 @@ def _get_nonevent_and_concat(events, new_event_id, match_event, sub_events):
 # %% [markdown]
 #
 # Firstly get activity around all rewarded mag events
+
+# %%
 events = _find_and_concat_events(events, 'REWmag', 'Mag', 'Rew', direction='forward')
 
+# %%
+events
+
+# %% [markdown]
+#
+# Let's take a look specifically at the rewarded magazine entries and
+# the time right after them.
+
+# %%
+def get_event_windows(df, window_range=(-0.1, 10)):
+    x = df.iloc[0]
+    p0, p1 = window_range
+    ev_window = head_centre_masked_df.loc[idx[x.subject, x.session, x.task, x.acq, :, (x.onset+p0):(x.onset+p1)]]
+    ev_window['window_offset'] = np.arange(len(ev_window))
+    ev_window.set_index('window_offset', append=True, inplace=True)
+    return ev_window.reset_index(['subject', 'session', 'task', 'acq'], drop=True)
+
+
+onset_groupby = ['subject', 'session', 'task', 'acq', 'onset']
+REWmag_groups = events.loc[events.event_id == 'REWmag'].reset_index().groupby(onset_groupby)
+REWmag_post = REWmag_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 10))
+rew_groups = events.loc[events.event_id == 'rew'].reset_index().groupby(onset_groupby)
+rew_post = REWmag_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 1))
+# REWmag_windows.droplevel(['frame_id', 'time'], axis=0).unstack('window_offset')
+
+# %%
+# Interpolate invalid values
+REWmag_post.loc[REWmag_post['mask'] == False, ['x', 'y']] = np.nan
+REWmag_post.loc[:, ['x', 'y']] = REWmag_post.loc[:, ['x', 'y']].interpolate()
+
+# %%
+paths = {(sub, ses): hv.Overlay(
+            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+             for acq in ['A', 'B']])
+         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
+
+
+# %%
+import panel as pn
+import hvplot.pandas
+rew_post.loc[:, ['speed']].groupby(onset_groupby).mean().reset_index().hvplot.violin(
+    y='speed', by=['subject', 'session', 'acq'], color='acq', width=1200, height=400)
+
+# %% [markdown]
+#
+# What about the approach velocity to the magazine after reward?
+
+# %%
+REWmag_windows['speed'] = REWmag_windows.loc[:, ['x', 'y']].groupby(onset_groupby).apply(lambda x: print(x.diff().pow(2).sum(axis=1).pow(0.5) / 30))
+REWmag_windows
 
 # %%
 from shapely.geometry import Polygon
