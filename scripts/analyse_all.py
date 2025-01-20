@@ -9,6 +9,7 @@
 #
 # First we need to import the `pandas` module which allows us to manipulate tabular data. The module provides two basic data structures, DataFrames (table-like) and Series (row-like).
 # Remy / Danger / Pinky / The Brain
+
 # %%
 import pandas as pd
 idx = pd.IndexSlice
@@ -258,6 +259,7 @@ def _get_nonevent_and_concat(events, new_event_id, match_event, sub_events):
 
 # %%
 events = _find_and_concat_events(events, 'REWmag', 'Mag', 'Rew', direction='forward')
+events = _find_and_concat_events(events, 'REWMAGlp', 'LP', 'REWmag', direction='forward')
 
 # %%
 events
@@ -279,23 +281,68 @@ def get_event_windows(df, window_range=(-0.1, 10)):
 
 onset_groupby = ['subject', 'session', 'task', 'acq', 'onset']
 REWmag_groups = events.loc[events.event_id == 'REWmag'].reset_index().groupby(onset_groupby)
-REWmag_post = REWmag_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 10))
-rew_groups = events.loc[events.event_id == 'rew'].reset_index().groupby(onset_groupby)
-rew_post = REWmag_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 1))
+REWmag_post = REWmag_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 5))
+rew_groups = events.loc[events.event_id == 'Rew'].reset_index().groupby(onset_groupby)
+rew_post = rew_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 1))
 # REWmag_windows.droplevel(['frame_id', 'time'], axis=0).unstack('window_offset')
+lp_groups = events.loc[events.event_id == 'REWMAGlp'].reset_index().groupby(onset_groupby)
+lp_post = lp_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-2, 0))
 
 # %%
 # Interpolate invalid values
 REWmag_post.loc[REWmag_post['mask'] == False, ['x', 'y']] = np.nan
 REWmag_post.loc[:, ['x', 'y']] = REWmag_post.loc[:, ['x', 'y']].interpolate()
+rew_post.loc[rew_post['mask'] == False, ['x', 'y']] = np.nan
+rew_post.loc[:, ['x', 'y']] = rew_post.loc[:, ['x', 'y']].interpolate()
+lp_post.loc[lp_post['mask'] == False, ['x', 'y']] = np.nan
+lp_post.loc[:, ['x', 'y']] = lp_post.loc[:, ['x', 'y']].interpolate()
+
+# %%
+# Get a unique id for each onset within the session
+REWmag_post = REWmag_post.join(
+    REWmag_post.index.droplevel(['frame_id', 'time', 'window_offset']).unique().sort_values().to_frame().loc[:, []].groupby(['subject', 'session', 'task', 'acq']).cumcount().rename('onset_id'),
+    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'frame_id', 'time', 'window_offset'])
+rew_post = rew_post.join(
+    rew_post.index.droplevel(['frame_id', 'time', 'window_offset']).unique().sort_values().to_frame().loc[:, []].groupby(['subject', 'session', 'task', 'acq']).cumcount().rename('onset_id'),
+    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'frame_id', 'time', 'window_offset'])
+lp_post = lp_post.join(
+    lp_post.index.droplevel(['frame_id', 'time', 'window_offset']).unique().sort_values().to_frame().loc[:, []].groupby(['subject', 'session', 'task', 'acq']).cumcount().rename('onset_id'),
+    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'frame_id', 'time', 'window_offset'])
 
 # %%
 paths = {(sub, ses): hv.Overlay(
-            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
              for acq in ['A', 'B']])
          for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
 hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
 
+# %%
+# How about just the first 5 onsets?
+paths = {(sub, ses): hv.Overlay(
+            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :5, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+             for acq in ['A', 'B']])
+         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
+
+# %%
+# Lever presses?
+paths = {(sub, ses): hv.Overlay(
+            [hv.Path(list(lp_post.loc[idx[sub, ses, :, acq, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+             for acq in ['A', 'B']])
+         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
+
+# %%
+# How about just the first 5 lever presses?
+paths = {(sub, ses): hv.Overlay(
+            [hv.Path(list(lp_post.loc[idx[sub, ses, :, acq, :5, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+             for acq in ['A', 'B']])
+         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
+
+# %% [markdown]
+#
+# What about the approach velocity to the magazine after reward?
 
 # %%
 import panel as pn
@@ -303,9 +350,10 @@ import hvplot.pandas
 rew_post.loc[:, ['speed']].groupby(onset_groupby).mean().reset_index().hvplot.violin(
     y='speed', by=['subject', 'session', 'acq'], color='acq', width=1200, height=400)
 
-# %% [markdown]
-#
-# What about the approach velocity to the magazine after reward?
+# %%
+rew_post.loc[:, ['speed']].groupby(['subject', 'session', 'task', 'acq', 'onset_id']).mean().reset_index().hvplot.line(
+    x='onset_id', y='speed', by=['session', 'acq'], groupby='subject', width=1200, height=400)
+
 
 # %%
 REWmag_windows['speed'] = REWmag_windows.loc[:, ['x', 'y']].groupby(onset_groupby).apply(lambda x: print(x.diff().pow(2).sum(axis=1).pow(0.5) / 30))
