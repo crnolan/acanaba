@@ -11,9 +11,13 @@
 # Remy / Danger / Pinky / The Brain
 
 # %%
+import json
+from pathlib import Path
+from collections import namedtuple
+import re
+import numpy as np
 import pandas as pd
 idx = pd.IndexSlice
-import numpy as np
 import spatial
 from behapy.events import find_events
 
@@ -28,16 +32,14 @@ panel.extension(comms='vscode')
 # Let's load our analysed position data.
 
 # %%
-from pathlib import Path
-from collections import namedtuple
-import re
-# data_path = Path('../data/operant2023')
-dlc_threshold = 0.8
+dlc_threshold = 0.5
 data_path = Path(r'C:\Users\cnolan\UNSW\ACAN - ABA - ABA\ACAN2023\operant\organised')
 Recording = namedtuple(
     "Recording", ["subject", "session", "task", "acq", "med_path", "dlc_path"])
-pattern = (f'sub-*/ses-*/sub-*_ses-*_task-*_acq-*_events.csv')
-regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_events.csv")
+# pattern = (f'sub-*/ses-*/sub-*_ses-*_task-*_acq-*_events.csv')
+# regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_events.csv")
+pattern = (f'sub-*/ses-*/sub-*_ses-*_task-*_acq-*.json')
+regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+).json")
 # data_files = list(Path('../data/operant2023').glob(str(pattern)))
 data_files = list(data_path.glob(str(pattern)))
 extracted_data = []
@@ -45,9 +47,13 @@ for file_path in data_files:
     match = re.search(regex_pattern, str(file_path.name))
     if match:
         sub, ses, task, acq = match.groups()
+        if ses in ['prerev', 'rev.01']:
+            dlc_postfix = 'vidDLC_resnet50_dlc_acan_masterOct23shuffle1_800000_filtered.h5'
+        else:
+            dlc_postfix = 'vidDLC_Resnet50_dlc_acan_masterOct23shuffle2_snapshot_060_filtered.h5'
         dlc_path = re.sub(
-            r'acq-.*_events\.csv',
-            'vidDLC_resnet50_dlc_acan_masterOct23shuffle1_800000.h5',
+            r'acq-.*\.json',
+            dlc_postfix,
             str(file_path))
         data_file = Recording(sub, ses, task, acq, file_path, dlc_path)
         extracted_data.append(data_file)
@@ -84,10 +90,6 @@ track_df
 # Each day we ran two MedPC sessions, one for each lever, however we only recorded a single video that spanned both sessions. We somehow need to map the times of the MedPC data to the correct video frames. For this purpose, we had MedPC control an LED positioned in the frame of each video and record the onset and offset times for every LED flash.
 #
 # We can filter all our positional data by the first and last LED flash in each acquisition run. These values are stored in JSON files associated with each MedPC session.
-
-# %%
-from pathlib import Path
-import json
 
 # %%
 def load_sidecar(filename: str) -> pd.Series:
