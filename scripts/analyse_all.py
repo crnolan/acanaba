@@ -38,8 +38,8 @@ Recording = namedtuple(
     "Recording", ["subject", "session", "task", "acq", "med_path", "dlc_path"])
 # pattern = (f'sub-*/ses-*/sub-*_ses-*_task-*_acq-*_events.csv')
 # regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_events.csv")
-pattern = (f'sub-*/ses-*/sub-*_ses-*_task-*_acq-*.json')
-regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+).json")
+pattern = (f'sub-*/ses-*/sub-*_ses-*_task-*_acq-*_events.csv')
+regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_events.csv")
 # data_files = list(Path('../data/operant2023').glob(str(pattern)))
 data_files = list(data_path.glob(str(pattern)))
 extracted_data = []
@@ -48,7 +48,7 @@ for file_path in data_files:
     if match:
         sub, ses, task, acq = match.groups()
         if ses in ['prerev', 'rev.01']:
-            dlc_postfix = 'vidDLC_resnet50_dlc_acan_masterOct23shuffle1_800000_filtered.h5'
+            dlc_postfix = 'vidDLC_resnet50_dlc_acan_masterOct23shuffle1_800000.h5'
         else:
             dlc_postfix = 'vidDLC_Resnet50_dlc_acan_masterOct23shuffle2_snapshot_060_filtered.h5'
         dlc_path = re.sub(
@@ -281,13 +281,15 @@ def get_event_windows(df, window_range=(-0.1, 10)):
     return ev_window.reset_index(['subject', 'session', 'task', 'acq'], drop=True)
 
 
-onset_groupby = ['subject', 'session', 'task', 'acq', 'onset']
+onset_groupby = ['subject', 'session', 'task', 'acq', 'onset', 'event_id']
 REWmag_groups = events.loc[events.event_id == 'REWmag'].reset_index().groupby(onset_groupby)
 REWmag_post = REWmag_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 5))
 rew_groups = events.loc[events.event_id == 'Rew'].reset_index().groupby(onset_groupby)
 rew_post = rew_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-0.1, 1))
 # REWmag_windows.droplevel(['frame_id', 'time'], axis=0).unstack('window_offset')
-lp_groups = events.loc[events.event_id == 'REWMAGlp'].reset_index().groupby(onset_groupby)
+REWMAGlp_groups = events.loc[events.event_id == 'REWMAGlp'].reset_index().groupby(onset_groupby)
+REWMAGlp_post = REWMAGlp_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-2, 0))
+lp_groups = events.loc[events.event_id.isin(['LLP', 'RLP'])].reset_index().groupby(onset_groupby)
 lp_post = lp_groups[['subject', 'session', 'task', 'acq', 'onset']].apply(get_event_windows, window_range=(-2, 0))
 
 # %%
@@ -296,6 +298,8 @@ REWmag_post.loc[REWmag_post['mask'] == False, ['x', 'y']] = np.nan
 REWmag_post.loc[:, ['x', 'y']] = REWmag_post.loc[:, ['x', 'y']].interpolate()
 rew_post.loc[rew_post['mask'] == False, ['x', 'y']] = np.nan
 rew_post.loc[:, ['x', 'y']] = rew_post.loc[:, ['x', 'y']].interpolate()
+REWMAGlp_post.loc[REWMAGlp_post['mask'] == False, ['x', 'y']] = np.nan
+REWMAGlp_post.loc[:, ['x', 'y']] = REWMAGlp_post.loc[:, ['x', 'y']].interpolate()
 lp_post.loc[lp_post['mask'] == False, ['x', 'y']] = np.nan
 lp_post.loc[:, ['x', 'y']] = lp_post.loc[:, ['x', 'y']].interpolate()
 
@@ -303,43 +307,54 @@ lp_post.loc[:, ['x', 'y']] = lp_post.loc[:, ['x', 'y']].interpolate()
 # Get a unique id for each onset within the session
 REWmag_post = REWmag_post.join(
     REWmag_post.index.droplevel(['frame_id', 'time', 'window_offset']).unique().sort_values().to_frame().loc[:, []].groupby(['subject', 'session', 'task', 'acq']).cumcount().rename('onset_id'),
-    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'frame_id', 'time', 'window_offset'])
+    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'event_id', 'frame_id', 'time', 'window_offset'])
 rew_post = rew_post.join(
     rew_post.index.droplevel(['frame_id', 'time', 'window_offset']).unique().sort_values().to_frame().loc[:, []].groupby(['subject', 'session', 'task', 'acq']).cumcount().rename('onset_id'),
-    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'frame_id', 'time', 'window_offset'])
+    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'event_id', 'frame_id', 'time', 'window_offset'])
+REWMAGlp_post = REWMAGlp_post.join(
+    REWMAGlp_post.index.droplevel(['frame_id', 'time', 'window_offset']).unique().sort_values().to_frame().loc[:, []].groupby(['subject', 'session', 'task', 'acq']).cumcount().rename('onset_id'),
+    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'event_id', 'frame_id', 'time', 'window_offset'])
 lp_post = lp_post.join(
     lp_post.index.droplevel(['frame_id', 'time', 'window_offset']).unique().sort_values().to_frame().loc[:, []].groupby(['subject', 'session', 'task', 'acq']).cumcount().rename('onset_id'),
-    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'frame_id', 'time', 'window_offset'])
+    how='left').set_index('onset_id', append=True).reorder_levels(['subject', 'session', 'task', 'acq', 'onset_id', 'onset', 'event_id', 'frame_id', 'time', 'window_offset'])
 
 # %%
 paths = {(sub, ses): hv.Overlay(
-            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
              for acq in ['A', 'B']])
-         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+         for i, sub, ses in info_df.loc[idx[:, ['prerev', 'rev.01'], :], :].reset_index().loc[:, ['sub', 'ses']].itertuples()}
 hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
 
 # %%
 # How about just the first 5 onsets?
 paths = {(sub, ses): hv.Overlay(
-            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :5, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+            [hv.Path(list(REWmag_post.loc[idx[sub, ses, :, acq, :5, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
              for acq in ['A', 'B']])
-         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+         for i, sub, ses in info_df.loc[idx[:, ['prerev', 'rev.01'], :], :].reset_index().loc[:, ['sub', 'ses']].itertuples()}
 hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
 
 # %%
 # Lever presses?
 paths = {(sub, ses): hv.Overlay(
-            [hv.Path(list(lp_post.loc[idx[sub, ses, :, acq, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+            [hv.Path(list(REWMAGlp_post.loc[idx[sub, ses, :, acq, :, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
              for acq in ['A', 'B']])
-         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+         for i, sub, ses in info_df.loc[idx[:, ['prerev', 'rev.01'], :], :].reset_index().loc[:, ['sub', 'ses']].itertuples()}
 hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
 
 # %%
 # How about just the first 5 lever presses?
 paths = {(sub, ses): hv.Overlay(
-            [hv.Path(list(lp_post.loc[idx[sub, ses, :, acq, :5, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+            [hv.Path(list(REWMAGlp_post.loc[idx[sub, ses, :, acq, :5, :, :, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
              for acq in ['A', 'B']])
-         for i, sub, ses in info_df.reset_index().loc[:, ['sub', 'ses']].itertuples()}
+         for i, sub, ses in info_df.loc[idx[:, ['prerev', 'rev.01'], :], :].reset_index().loc[:, ['sub', 'ses']].itertuples()}
+hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
+
+# %%
+# Lever presses during deval?
+paths = {(sub, ses): hv.Overlay(
+            [hv.Path(list(lp_post.loc[idx[sub, ses, :, :, :, :, event, :, :, :], ['x', 'y']].groupby(['onset']).apply(lambda x: x.to_numpy())))
+             for event in ['LLP', 'RLP']])
+         for i, sub, ses in info_df.loc[idx[:, ['deval-rev.01', 'deval-rev.02'], :], :].reset_index().loc[:, ['sub', 'ses']].itertuples()}
 hv.HoloMap(paths, kdims=['sub', 'ses']).layout(['ses']).cols(2).opts(opts.Path(frame_width=400, frame_height=400, alpha=0.5))
 
 # %% [markdown]
@@ -356,6 +371,9 @@ rew_post.loc[:, ['speed']].groupby(onset_groupby).mean().reset_index().hvplot.vi
 rew_post.loc[:, ['speed']].groupby(['subject', 'session', 'task', 'acq', 'onset_id']).mean().reset_index().hvplot.line(
     x='onset_id', y='speed', by=['session', 'acq'], groupby='subject', width=1200, height=400)
 
+
+# %% [markdown]
+#
 
 # %%
 REWmag_windows['speed'] = REWmag_windows.loc[:, ['x', 'y']].groupby(onset_groupby).apply(lambda x: print(x.diff().pow(2).sum(axis=1).pow(0.5) / 30))

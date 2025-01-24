@@ -1,0 +1,10 @@
+{
+    "timestamp": "Z",
+    "event_index": "Y",
+    "event_map": {
+        "1": "LLP",
+        "2": "RLP",
+        "3": "Rew",
+        "4": "Mag"
+    }
+}
