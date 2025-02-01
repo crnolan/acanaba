@@ -5,10 +5,7 @@ import re
 import numpy as np
 import pandas as pd
 from typing import Union
-
-
-Recording = namedtuple(
-    "Recording", ["subject", "session", "task", "acq", "med_path", "dlc_path"])
+import logging
 
 
 def load_recordings(data_path: Union[str, Path]) -> pd.DataFrame:
@@ -21,25 +18,73 @@ def load_recordings(data_path: Union[str, Path]) -> pd.DataFrame:
         A `pd.DataFrame` containing the recordings.
     """
     data_path = Path(data_path)
-    glob_pattern = 'sub-*/ses-*/sub-*_ses-*_task-*_acq-*_events.csv'
-    re_pattern = (r'sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_'
-                  r'events.csv')
-    data_files = list(data_path.glob(str(glob_pattern)))
+    glob_pattern = 'sub-*/ses-*/sub-*_ses-*_task-*_acq-*.json'
+    re_pattern = (r'sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+).json')
+    json_files = list(data_path.glob(str(glob_pattern)))
     extracted_data = []
-    for file_path in data_files:
-        match = re.search(re_pattern, str(file_path.name))
+    for json_path in json_files:
+        match = re.search(re_pattern, str(json_path.name))
         if match:
+            # Pull out the json data
+            try:
+                with open(json_path) as f:
+                    recording = json.load(f)
+            except json.JSONDecodeError:
+                logging.warning(f'Error reading {json_path.name}')
+                continue
+
+            # Verify json has the required info
+            required_keys = set(['sub', 'ses', 'acq', 'block',
+                                 'firston', 'laston', 'firstmed', 'lastmed'])
+            if not required_keys.issubset(recording.keys()):
+                logging.warning(
+                    f'Missing data in {json_path.name}, need keys {required_keys}')
             sub, ses, task, acq = match.groups()
-            if ses in ['prerev', 'rev.01']:
-                dlc_postfix = 'vidDLC_resnet50_dlc_acan_masterOct23shuffle1_800000.h5'
+            if (sub != recording['sub'] or ses != recording['ses']
+                or acq != recording['acq']):
+                logging.warning(f'Session metadata is inconsistent between '
+                                f'path and JSON at {json_path.name}')
+            recording['task'] = task
+            prefix = f'sub-{sub}_ses-{ses}_task-{task}_acq-{acq}'
+
+            # Find corresponding DLC and events files
+            dlc_glob = list(json_path.parent.glob(prefix + '*_filtered.h5'))
+            if len(dlc_glob) > 1:
+                raise ValueError(
+                    f"Multiple DLC files found for {json_path.name}")
+            elif len(dlc_glob) == 0:
+                logging.warning(f'No DLC file found for {json_path.name}')
+                recording['dlc_path'] = None
             else:
-                dlc_postfix = 'vidDLC_Resnet50_dlc_acan_masterOct23shuffle2_snapshot_060_filtered.h5'
-            dlc_path = re.sub(
-                r'acq-.*\.json',
-                dlc_postfix,
-                str(file_path))
-            data_file = Recording(sub, ses, task, acq, file_path, dlc_path)
-            extracted_data.append(data_file)
+                recording['dlc_path'] = dlc_glob[0]
+            events_path = (json_path.parent / (prefix + '_events.csv'))
+            if not events_path.exists():
+                logging.warning(f'No events file found for {json_path.name}')
+                events_path = None
+            recording['events_path'] = events_path
+            extracted_data.append(recording)
     recordings = pd.DataFrame(extracted_data)
+    recordings = recordings.rename(columns={'sub': 'subject', 'ses': 'session'})
     recordings = recordings.set_index(['subject', 'session', 'task', 'acq'])
-    recordings
+    return recordings
+
+
+def load_track_session(dlc_path, firston, laston, firstmed,
+                       prefiltered=True) -> pd.DataFrame:
+    '''Load one session analysed by DeepLabCut into a DataFrame'''
+    try:
+        df = pd.read_hdf(dlc_path)
+    except FileNotFoundError:
+        print(f'File not found: {dlc_path}')
+        return None
+    df.columns = df.columns.droplevel(0)
+    df.index.name = 'frame_id'
+    df = df.loc[firston:laston, (slice(None), ['x', 'y'])].sort_index(axis=1)
+    if prefiltered:
+        # Drop the likelihood column and substitute NaN for -1
+        df = df.mask(df < 0)
+    df['time'] = (df.index.get_level_values('frame_id') - firston) / 30 + firstmed
+    df.set_index('time', append=True, inplace=True)
+    return df
+
+
