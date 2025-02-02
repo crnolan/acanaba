@@ -88,3 +88,11 @@ def load_track_session(dlc_path, firston, laston, firstmed,
     return df
 
 
+def load_events_session(events_path: Union[str, Path]) -> pd.DataFrame:
+    '''Load one session analysed by DeepLabCut into a DataFrame'''
+    try:
+        df = pd.read_csv(events_path)
+    except FileNotFoundError:
+        print(f'File not found: {events_path}')
+        return None
+    return df.set_index('onset')

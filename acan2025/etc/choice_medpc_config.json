@@ -2,9 +2,9 @@
     "timestamp": "Z",
     "event_index": "Y",
     "event_map": {
-        "1": "LLP",
-        "2": "RLP",
-        "3": "Rew",
-        "4": "Mag"
+        "1": "llp",
+        "2": "rlp",
+        "3": "rew",
+        "4": "mag"
     }
 }

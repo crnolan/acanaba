@@ -17,7 +17,7 @@ for config in (choice_config, train_config):
 regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_rawmed.txt")
 
 # %%
-for fn in (projroot / 'sourcedata').glob('**/*rawmed.txt'):
+for fn in (projroot / 'rawdata').glob('**/*rawmed.txt'):
     match = re.search(regex_pattern, str(fn.name))
     if not match:
         logging.warning(f'Bad template match for {fn.name}')
@@ -34,10 +34,9 @@ for fn in (projroot / 'sourcedata').glob('**/*rawmed.txt'):
                               config['event_map'])
     events_df = pd.DataFrame({
         'onset': events['timestamp'] / pd.Timedelta('1s'),
-        'offset': np.nan,
-        'value': events['event']
+        'duration': np.nan,
+        'event_id': events['event']
     })
-    if 'deval' in ses:
-        events_df.to_csv(fn.parent / f'sub-{sub}_ses-{ses}_task-{task}_acq-{acq}_events.csv', index=False)
+    events_df.to_csv(fn.parent / f'sub-{sub}_ses-{ses}_task-{task}_acq-{acq}_events.csv', index=False)
 
 # %%

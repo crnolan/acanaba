@@ -5,7 +5,7 @@ from collections import namedtuple
 import re
 import numpy as np
 import pandas as pd
-from utils import load_recordings, load_track_session
+from utils import load_recordings, load_track_session, load_events_session
 import logging
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 idx = pd.IndexSlice
@@ -26,6 +26,14 @@ recordings
 track_df = recordings[['dlc_path', 'firston', 'laston', 'firstmed']].groupby(rec_cols).apply(
     lambda x: load_track_session(*(x.iloc[0])))
 track_df
+
+# %% [markdown]
+#
+# And the same for events.
+
+# %%
+events_df = recordings[['events_path']].groupby(rec_cols).apply(
+    lambda x: load_events_session(*(x.iloc[0])))
 
 # %%
 # recordings.eval('(laston - firston) / (lastmed - firstmed)')
@@ -95,13 +103,14 @@ speed = track_df.groupby(rec_cols, group_keys=False).apply(calc_speed)
 
 # %% [markdown]
 #
-# Let's get windows around the
+# We need data around our event times
 
 # %%
-# def get_event_windows(df, window_range=(-0.1, 10)):
-#     x = df.iloc[0]
-#     p0, p1 = window_range
-#     ev_window = head_centre_masked_df.loc[idx[x.subject, x.session, x.task, x.acq, :, (x.onset+p0):(x.onset+p1)]]
-#     ev_window['window_offset'] = np.arange(len(ev_window))
-#     ev_window.set_index('window_offset', append=True, inplace=True)
-#     return ev_window.reset_index(['subject', 'session', 'task', 'acq'], drop=True)
+def get_event_windows(df, onset, window_range=(-0.5, 0.0)):
+    p0, p1 = window_range
+    ev_window = df.loc[(onset+p0):(onset+p1), :]
+    ev_window['window_offset'] = np.arange(len(ev_window))
+    return ev_window.set_index('window_offset')
+
+
+# %%
