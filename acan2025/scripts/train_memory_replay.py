@@ -9,9 +9,8 @@ from PIL import Image
 import deeplabcut
 
 # %%
-project_path = Path('/scratch/acan/acan2025')
-# dlc_path = Path('/scratch/acan/acan2025/derivatives/dlc/acan-2025-tjb-2025-01-25')
-dlc_path = Path('/scratch/acan/acan2025/derivatives/dlc/acan-cn-2025-01-28')
+project_path = Path('/scratch/acan/acanaba/acan2025')
+dlc_path = project_path / 'derivatives/dlc/acan-cn-2025-01-28'
 dlc_config = dlc_path / 'config.yaml'
 superanimal_name = 'superanimal_topviewmouse'
 model_name = 'hrnet_w32'
@@ -26,12 +25,12 @@ deeplabcut.train_network(
     batch_size=64,  # if you get a CUDA OOM error when training on a GPU, reduce to 32, 16, ...!
     detector_batch_size=8,
     display_iters=10,
-    shuffle=5
+    shuffle=6
 )
 
 # %%
 deeplabcut.evaluate_network(dlc_config,
-                            Shuffles=[5],
+                            Shuffles=[6],
                             plotting=True)
 
 

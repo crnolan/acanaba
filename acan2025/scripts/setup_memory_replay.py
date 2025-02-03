@@ -22,9 +22,9 @@ from deeplabcut.modelzoo.video_inference import video_inference_superanimal
 from deeplabcut.utils.pseudo_label import keypoint_matching
 
 # %%
-project_path = Path('/scratch/acan/acan2025')
+project_path = Path('/scratch/acan/acanaba/acan2025')
 # dlc_path = Path('/scratch/acan/acan2025/derivatives/dlc/acan-2025-tjb-2025-01-25')
-dlc_path = Path('/scratch/acan/acan2025/derivatives/dlc/acan-cn-2025-01-28')
+dlc_path = project_path / 'derivatives/dlc/acan-cn-2025-01-28'
 dlc_config = dlc_path / 'config.yaml'
 superanimal_name = 'superanimal_topviewmouse'
 model_name = 'hrnet_w32'
@@ -96,7 +96,7 @@ weight_init = build_weight_init(
 
 deeplabcut.create_training_dataset(
     dlc_config,
-    Shuffles=[5],
+    Shuffles=[6],
     engine=Engine.PYTORCH,
     net_type=f"top_down_{model_name}",
     detector_type=detector_name,
