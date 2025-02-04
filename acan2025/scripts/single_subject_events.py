@@ -30,12 +30,27 @@ import hvplot.pandas
 #
 # We can break up long strings across lines be enclosing them in
 # parentheses.
+#
+#Before running the next cell, ensure that you have copied your data 
+# (e.g. sub-angelina) into a folder called "rawdata" in the parent directory
+
+
+# %% [markdown]
+#Let's get our hands on your mouse's operant conditioning data! The raw timestamped
+#events are stored in a csv file (these have been extracted from the med-pc source files).
 
 # %%
+
+#specify your own mouse and session of interest here
 events_fn = ('../rawdata/sub-danger/ses-RR20.03/'
              'sub-danger_ses-RR20.03_task-RR20_acq-A_events.csv')
 
 # %%
+
+# read the csv specified in the cell above and hold in in a variable called "events"
+# We need to change the onset timestamps (which are just numbers reflecting seconds 
+# since the start of the session) into actual time (days, hours, mins)
+
 events = pd.read_csv(events_fn)
 events['onset'] = pd.to_timedelta(events['onset'], unit='s')
 events = events.fillna(0.01).set_index('onset')
@@ -53,6 +68,13 @@ events
 #
 # but it's much harder to read and quite possibly requires horizontal
 # scrolling to read the whole line.
+
+# Next we want to calculate the rate of occurance of each event type
+# across some rolling window of time (e.g. 30s). First we group the 
+# data by each event type, then calculate the number of occurences
+# of that event type over each rolling window. Since duration isn't
+# doing anything much in our csv, we can rename it "rate" and insert 
+# the event rates here.  
 
 # %%
 event_rates = (
@@ -115,7 +137,8 @@ def load_events(filename):
 load_events(events_fn)
 
 # %% [markdown]
-# Now we can use that function to load both acquisition sessions.
+# Now we can use that function to load both acquisition sessions. Recall
+# that we have acquisitions A and B.
 #
 # A Path object can be used to represent a folder on the filesystem.
 
