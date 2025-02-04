@@ -31,7 +31,7 @@ import hvplot.pandas
 # We can break up long strings across lines be enclosing them in
 # parentheses.
 #
-#Before running the next cell, ensure that you have copied your data 
+#Before running the next cell, ensure that you have copied your data
 # (e.g. sub-angelina) into a folder called "rawdata" in the parent directory
 
 
@@ -48,7 +48,7 @@ events_fn = ('../rawdata/sub-danger/ses-RR20.03/'
 # %%
 
 # read the csv specified in the cell above and hold in in a variable called "events"
-# We need to change the onset timestamps (which are just numbers reflecting seconds 
+# We need to change the onset timestamps (which are just numbers reflecting seconds
 # since the start of the session) into actual time (days, hours, mins)
 
 events = pd.read_csv(events_fn)
@@ -58,31 +58,92 @@ events
 
 # %% [markdown]
 #
+# Next we want to calculate the rate of occurance of each event type
+# across some rolling window of time (e.g. 30s).
+#
+# The events table here is labelled for discrete events. If we want to
+# look at event rate at all times (including times there are not
+# events), we need a continuous time series.
+
+# %%
+
+# We can convert event_id to an index
+events.set_index('event_id', append=True)
+
+# %% [markdown]
+#
 # The formatting below is just to make the "method chaining" clear and
 # avoid excessively long lines. One could just write the first
 # assignment as:
 #
 # ```python
-# event_rates = events.groupby('event_id').rolling(pd.to_timedelta('30s')).count().rename(columns={'duration': 'rate'}))
+# (events.set_index('event_id', append=True).unstack('event_id'))
 # ```
 #
 # but it's much harder to read and quite possibly requires horizontal
 # scrolling to read the whole line.
-
-# Next we want to calculate the rate of occurance of each event type
-# across some rolling window of time (e.g. 30s). First we group the 
-# data by each event type, then calculate the number of occurences
-# of that event type over each rolling window. Since duration isn't
-# doing anything much in our csv, we can rename it "rate" and insert 
-# the event rates here.  
+#
+# We'll expand the method chaining line by line as an example.
 
 # %%
+
+# We can get a column for each event
+(events.set_index('event_id', append=True)
+ .unstack('event_id'))
+
+# %%
+
+# We can convert this now to a boolean truth table and remove the
+# 'duration' label
+
+(events.set_index('event_id', append=True)
+ .unstack('event_id')
+ .notna()
+ .droplevel(0, axis=1))
+
+# %%
+
+# And now resample in continuous time
+(events.set_index('event_id', append=True)
+ .unstack('event_id')
+ .notna()
+ .droplevel(0, axis=1)
+ .resample(pd.to_timedelta('0.01s'))
+ .sum())
+
+# %%
+
+# Now we can calculate continuous event rates
+
+(events.set_index('event_id', append=True)
+ .unstack('event_id')
+ .notna()
+ .droplevel(0, axis=1)
+ .resample(pd.to_timedelta('0.01s'))
+ .sum()
+ .rolling(pd.to_timedelta('30s'))
+ .sum())
+#  .rename(columns={'duration': 'rate'}))
+
+# %%
+
+# Finally stack the table back to long form data, assign it to a
+# variable and give it a name.
+
 event_rates = (
-    events
-        .groupby('event_id')
-        .rolling(pd.to_timedelta('30s'))
-        .count()
-        .rename(columns={'duration': 'rate'}))
+    events.set_index('event_id', append=True)
+    .unstack('event_id')
+    .notna()
+    .droplevel(0, axis=1)
+    .resample(pd.to_timedelta('0.01s'))
+    .sum()
+    .rolling(pd.to_timedelta('30s'))
+    .sum()
+    .stack()
+    .reorder_levels(['event_id', 'onset'])
+    .sort_index())
+event_rates.name = 'rate'
+event_rates = event_rates.to_frame()
 event_rates
 
 # %% [markdown]
@@ -178,10 +239,30 @@ ses_events
 ses_event_rates = (
     ses_events
         .reset_index('acq')
-        .groupby(['acq', 'event_id'])
-        .rolling(pd.to_timedelta('30s'))
-        .count()
-        .rename(columns={'duration': 'rate'}))
+        .groupby('acq')
+        .apply(
+            lambda x: (x
+                .set_index('event_id', append=True)
+                .unstack('event_id')
+                .notna()
+                .droplevel(0, axis=1)
+                .resample(pd.to_timedelta('1s'))
+                .sum()
+                .rolling(pd.to_timedelta('30s'))
+                .sum()
+                .stack()
+                .reorder_levels(['event_id', 'onset'])
+                .sort_index())))
+ses_event_rates.name = 'rate'
+ses_event_rates = ses_event_rates.to_frame()
+
+# ses_event_rates = (
+#     ses_events
+#         .reset_index('acq')
+#         .groupby(['acq', 'event_id'])
+#         .rolling(pd.to_timedelta('30s'))
+#         .count()
+#         .rename(columns={'duration': 'rate'}))
 ses_event_rates
 
 # %% [markdown]
