@@ -7,6 +7,8 @@ from pathlib import Path
 import json
 import re
 
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+
 # %%
 projroot = Path('..')
 choice_config = json.load(open(projroot / 'etc/choice_medpc_config.json'))
@@ -23,6 +25,11 @@ for fn in (projroot / 'rawdata').glob('**/*rawmed.txt'):
         logging.warning(f'Bad template match for {fn.name}')
         continue
     sub, ses, task, acq = match.groups()
+    events_fn = fn.parent / f'sub-{sub}_ses-{ses}_task-{task}_acq-{acq}_events.csv'
+    if events_fn.exists():
+        logging.info(f'Events file already exists for {fn.name}')
+        continue
+    logging.info(f'Processing {fn.name}')
     if 'deval' in ses:
         config = choice_config
     else:
@@ -37,6 +44,6 @@ for fn in (projroot / 'rawdata').glob('**/*rawmed.txt'):
         'duration': np.nan,
         'event_id': events['event']
     })
-    events_df.to_csv(fn.parent / f'sub-{sub}_ses-{ses}_task-{task}_acq-{acq}_events.csv', index=False)
+    events_df.to_csv(events_fn, index=False)
 
 # %%
