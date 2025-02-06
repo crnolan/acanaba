@@ -8,6 +8,7 @@ import pandas as pd
 from utils import load_recordings, load_track_session, load_events_session
 import logging
 from sklearn.linear_model import LogisticRegressionCV
+from sklearn.metrics import confusion_matrix
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 idx = pd.IndexSlice
@@ -78,10 +79,12 @@ def calc_orientation(left: pd.DataFrame, right: pd.DataFrame,
 head_theta = track_df.groupby(rec_cols, group_keys=False).apply(
     lambda x: calc_orientation(x['left_ear'], x['right_ear'], 'head'))
 track_df = pd.concat([track_df, head_theta], axis=1)
+track_df
 
 # %%
-track_df
 track_filt = track_df.loc[:, idx[['head', 'neck'], :]]
+
+
 # %% [markdown]
 #
 # Now let's calculate speed and angular speed.
@@ -103,6 +106,7 @@ def calc_speed(df: pd.DataFrame) -> pd.DataFrame:
 speed = track_df.groupby(rec_cols, group_keys=False).apply(calc_speed)
 speed_filt = speed.loc[:, idx[['head', 'neck'], :]]
 
+
 # %% [markdown]
 #
 # We need data around our event times
@@ -114,8 +118,13 @@ def get_event_windows(df, onset, window_range=(-0.5, 0.0)):
     frame_range = np.rint(np.array(window_range) * 30).astype(int)
     fs, fe = frame_range + nearest_frame
     ev_window = df.loc[(slice(fs, fe), slice(None)), :].copy()
-    ev_window['window_offset'] = np.arange(frame_range[0], frame_range[1]+1,
-                                           dtype=int)
+    try:
+        ev_window['window_offset'] = np.arange(frame_range[0], frame_range[1]+1,
+                                               dtype=int)
+    except ValueError:
+        logging.warning(f'Dropped event at onset {onset}, '
+                        f'likely missing frame data.')
+        return None
     return ev_window.set_index('window_offset')
 
 
@@ -132,36 +141,57 @@ lp_beta = lp_windows_df.unstack('window_offset')
 
 
 # %%
-def fit_logistic_regression(df: pd.DataFrame, cv=100,
+def fit_logistic_regression(df: pd.DataFrame, cv=40,
                             max_iter=10000) -> pd.DataFrame:
     clf = LogisticRegressionCV(
-        cv=100, max_iter=10000, class_weight='balanced', n_jobs=-1).fit(
+        cv=cv, max_iter=max_iter, class_weight='balanced', n_jobs=-1).fit(
             df.values, df.index.get_level_values('event_id'))
+    score = clf.score(df.values, df.index.get_level_values('event_id'))
+    cm = pd.DataFrame(
+        confusion_matrix(df.index.get_level_values('event_id'),
+                         clf.predict(df.values),
+                         labels=['llp', 'rlp']),
+        index=pd.Index(['llp', 'rlp'], name='true'),
+        columns=pd.Index(['llp', 'rlp'], name='predicted'))
     return pd.Series({'clf': clf,
-                      'score': clf.score(df.values,
-                                         df.index.get_level_values('event_id')),
-                      'confusion_matrix': confusion_matrix(
-                          df.index.get_level_values('event_id'),
-                          clf.predict(df.values))})
+                      'score': score,
+                      'confusion_matrix': cm})
 
 # %%
-clfs = lp_beta.groupby(['subject', 'session', 'task']).apply(
+clfs = lp_beta.interpolate().groupby(['subject', 'session', 'task']).apply(
     fit_logistic_regression)
 
-# %%
-lp_beta_brain = lp_beta.loc[('brain', 'RR20.03', 'RR20')]
-clf = LogisticRegressionCV(cv=100, max_iter=10000, class_weight='balanced').fit(
-    lp_beta_brain.values,
-    lp_beta_brain.index.get_level_values('event_id'))
+
+# %% [markdown]
+#
+# We have a classifier for each subject and session. What we want to know
+# is how well each classifier does on another day's data.
 
 # %%
-clf.score(lp_beta_brain.values, lp_beta_brain.index.get_level_values('event_id'))
+def test_logistic_regression(clf, df: pd.DataFrame) -> pd.DataFrame:
+    score = clf.score(df.values, df.index.get_level_values('event_id'))
+    cm = pd.DataFrame(
+        confusion_matrix(df.index.get_level_values('event_id'),
+                         clf.predict(df.values),
+                         labels=['llp', 'rlp']),
+        index=pd.Index(['llp', 'rlp'], name='true'),
+        columns=pd.Index(['llp', 'rlp'], name='predicted'))
+
+    return pd.Series({'score': score,
+                      'confusion_matrix': cm})
+
+
+def _tlr(df, train, test):
+    try:
+        return test_logistic_regression(df.loc[(df.name, *train)].clf,
+                                        lp_beta.interpolate().loc[(df.name, *test)])
+    except KeyError:
+        return None
 
 # %%
-from sklearn.metrics import confusion_matrix
-confusion_matrix(lp_beta_brain.index.get_level_values('event_id'), clf.predict(lp_beta_brain.values))
+clfs.groupby(['subject']).apply(lambda x: _tlr(x, ('RR20.03', 'RR20'), ('RR20prerev.01', 'RR20prerev')))
 
 # %%
-clf.coef_
+clfs.groupby(['subject']).apply(lambda x: _tlr(x, ('RR20prerev.01', 'RR20prerev'), ('RR20rev.01', 'RR20rev')))
 
 # %%
