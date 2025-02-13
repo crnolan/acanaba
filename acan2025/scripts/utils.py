@@ -96,5 +96,7 @@ def load_events_session(events_path: Union[str, Path],
     except FileNotFoundError:
         print(f'File not found: {events_path}')
         return None
-    df = df.replace({'lp': 'llp' if block[0] == 'L' else 'rlp'})
+    df['onset'] = pd.to_timedelta(df['onset'], unit='s')
+    if block:
+        df = df.replace({'lp': 'llp' if block[0] == 'L' else 'rlp'})
     return df.set_index('onset')
