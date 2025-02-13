@@ -6,14 +6,14 @@ import os
 import re
 
 # %%
-project_path = Path(r'C:\Users\HP Demo\Documents\steymornejad')
-trim_times = pd.read_csv(project_path / 'etc/trimtimes_box3.csv',
+project_path = Path(r'C:\Users\cnolan\Projects\acanaba\acan2025')
+trim_times = pd.read_csv(project_path / 'etc/trimtimes_groups.csv',
                          index_col=['filename', 'sub', 'ses', 'task', 'acq'])
 crop_coords = pd.read_csv(project_path / 'etc/boxcrops_wallacewurth.csv')
 crop_coords['w'] = crop_coords['x1'] - crop_coords['x0']
 crop_coords['h'] = crop_coords['y1'] - crop_coords['y0']
-in_path = Path(r'C:\Users\HP Demo\Documents\steymornejad\sourcedata\videos')
-out_path = Path(r'C:\Users\HP Demo\Documents\steymornejad\sourcedata\videos')
+in_path = Path(r'C:\Users\cnolan\UNSW\ACAN - ACAN2025 - ACAN2025\Modules\Week 3 - Conditioning Module\sourcedata\video\25_RR20_reversal4&5')
+out_path = Path(r'C:\Users\cnolan\tmp\trim_all')
 filenames = list(in_path.glob('*.mp4'))
 fn_pattern = r'group-([^_]+)_camera-overhead_(right|left)-(.*)\.mp4'
 
@@ -27,8 +27,11 @@ for index, row in trim_times.iterrows():
     fn_path = Path(fn)
     print(fn, sub, ses, task, acq)
     fn_postfix = f"sub-{sub}_ses-{ses}_task-{task}_acq-{acq}_vidcropped"
-    new_fn = in_path / (fn_path.stem + fn_postfix)
+    new_fn = out_path / (fn_path.stem + fn_postfix)
     trimmed_fns[index] = str(new_fn) + '.mp4'
+    if Path(str(new_fn) + '.mp4').exists():
+        print(f"Skipping existing file {new_fn}")
+        continue
     cmd = (f'ffmpeg -i "{in_path / fn}" -c copy -map 0 -f segment '
            f'-segment_times {row.trimstart},{row.trimend} '
            f'-reset_timestamps 1 '
@@ -55,6 +58,9 @@ for index, row in trim_times.iterrows():
     if match:
         box, camera, out_fn = match.groups()
         out_fn = f"sub-{sub}_ses-{ses}_task-{task}_acq-{acq}_vidcropped.mp4"
+        if Path(out_path / out_fn).exists():
+            print(f"Skipping existing file {out_fn}")
+            continue
         box_crop = crop_coords.query(f'box == "{box}" and camera == "{camera}"').iloc[0]
         cmd = (f'ffmpeg -i "{row["trimmed_fn"]}" '
                f'-vf "crop={box_crop.w}:{box_crop.h}:{box_crop.x0}:{box_crop.x1}" '
