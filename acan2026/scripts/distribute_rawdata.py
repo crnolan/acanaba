@@ -14,6 +14,7 @@ import subprocess
 # OUTPUT_ROOT = r"C:\Users\tburton\OneDrive - UNSW\ACAN-ACAN2026 - Documents\Modules\theme3_conditioning\rawdata"
 MAP_PATH = r"/mnt/c/Users/cnolan/UNSW/ACAN-ABA - Documents/ABA/staging/ACAN2026/exp-map.xlsx"
 STAGING_ROOT = r"/mnt/c/Users/cnolan/UNSW/ACAN-ABA - Documents/ABA/staging/ACAN2026"
+TEMP_ROOT = r"/home/cnolan/tmp"
 OUTPUT_ROOT = r"/mnt/c/Users/cnolan/UNSW/ACAN-ACAN2026 - Documents/Modules/theme3_conditioning/rawdata"
 #for testing:
 #OUTPUT_ROOT = r"C:\Users\tburton\Projects\acan-aba-2026\organised"
@@ -74,7 +75,7 @@ def find_video_file(search_dir, box, camera_side):
 # ---------------------------------------------------------
 
 VIDEO_ROOT = os.path.join(STAGING_ROOT, "video")
-
+quiet = True
 for _, row in counterbal.iterrows():
 
     sub = row["sub"]
@@ -86,6 +87,8 @@ for _, row in counterbal.iterrows():
 
         ses = srow["ses"]
         task = srow["task"]
+        if ses != "RR20prerev.03":
+            continue
 
         # Build output folder structure
         sub_folder = os.path.join(OUTPUT_ROOT, f"sub-{sub}")
@@ -105,7 +108,8 @@ for _, row in counterbal.iterrows():
 
             # SKIP if already processed
             if os.path.exists(new_path):
-                print(f"Skipping existing file: {new_name}")
+                if not quiet:
+                    print(f"Skipping existing file: {new_name}")
                 continue
 
             # Determine acquisition folder
@@ -121,14 +125,16 @@ for _, row in counterbal.iterrows():
             trim_row = trimtimes.query(f"session == '{ses}' and squad == '{squad}' and box == {box} and camera == '{camera_side}'")
 
             if trim_row.empty:
-                print(f"No trim times found for {ses} {squad} box {box} camera {camera_side}, skipping video.")
+                if not quiet:
+                    print(f"No trim times found for {ses} {squad} box {box} camera {camera_side}, skipping video.")
                 continue
 
             # Find matching video
             video_path = find_video_file(acq_dir, box, camera_side)
 
             if video_path is None:
-                print(f"Missing: {sub}, {task}.{ses}, acq {acq} (waiting for data)")
+                if not quiet:
+                    print(f"Missing: {sub}, {task}.{ses}, acq {acq} (waiting for data)")
                 continue
 
             cmd = (f'ffmpeg -ss {trim_row.iloc[0].trimstart} '
@@ -136,13 +142,24 @@ for _, row in counterbal.iterrows():
                    f'-i "{video_path}" -c copy '
                    f'-reset_timestamps 1 '
                    f'"{new_path}"')
-            # # Copy and rename
-            # shutil.copy2(video_path, new_path)
-            print(f"Running: {cmd}")
+            # temp_path = os.path.join(TEMP_ROOT, f"temp_{sub}_{ses}_{acq}_%03d.mp4")
+            # cmd = (f'ffmpeg -i "{video_path}" -c copy '
+            #        f'-f segment '
+            #        f'-segment_times {trim_row.iloc[0].trimstart},{trim_row.iloc[0].trimend} '
+            #        f'-reset_timestamps 1 '
+            #        f'"{temp_path}"')
+            print('Running:', cmd)
             output = subprocess.run(cmd, shell=True, capture_output=True)
             print(output.stderr.decode())
+            # shutil.copy2(temp_path.replace("%03d", "001"), new_path)
+            # os.remove(temp_path.replace("%03d", "001"))
+            # os.remove(temp_path.replace("%03d", "000"))
+            # os.remove(temp_path.replace("%03d", "002"))
             print(f"Trimmed source video {video_path} → {new_path}")
-            # print(f"Copied: {video_path} → {new_path}")
+            os.makedirs(os.path.join(ses_folder, acq), exist_ok=True)
+            cmd = (f'ffmpeg -i "{new_path}" -t 3 "{ses_folder}/{acq}/frame_%04d.jpg"')
+            output = subprocess.run(cmd, shell=True, capture_output=True)
+            print(output.stderr.decode())
 
 print("Incremental processing complete.")
 

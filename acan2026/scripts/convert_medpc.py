@@ -18,7 +18,7 @@ for config in (choice_config, train_config):
                             for key, value in config['event_map'].items()}
 regex_pattern = (r"sub-([^_]+)_ses-([^_]+)_task-([^_]+)_acq-([^_]+)_rawmed.txt")
 msn_pattern = (r'[^ ]+ (L|R) (PUR|GRN) (RR20|RR10|RR5|CRF)')
-overwrite = True
+overwrite = False
 
 # %%
 for fn in (projroot / 'rawdata').glob('**/*rawmed.txt'):
